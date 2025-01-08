@@ -4,8 +4,8 @@ import time
 import numpy as np
 
 # Replace with your KuCoin API keys
-API_KEY = '677dc35fbaf898000105dff3'
-API_SECRET = 'cd559011-a992-44a1-a029-ed7494471f28'
+API_KEY = '1'
+API_SECRET = '2'
 API_PASSPHRASE = 'arbitrage'
 
 # Initialize the KuCoin client
