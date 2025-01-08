@@ -1,0 +1,120 @@
+from kucoin.client import Client
+from datetime import datetime
+import time
+import numpy as np
+
+# Replace with your KuCoin API keys
+API_KEY = '677dc35fbaf898000105dff3'
+API_SECRET = 'cd559011-a992-44a1-a029-ed7494471f28'
+API_PASSPHRASE = 'arbitrage'
+
+# Initialize the KuCoin client
+client = Client(API_KEY, API_SECRET, API_PASSPHRASE)
+print(f"Client Object: {client}")
+print(dir(client))
+
+# Define constants
+SMA_LOOKBACK = 10  # Number of recent spread to use for SMA
+TRADE_FEE = 0.001 # trading fee of 0.1%
+TRANSACTION_SIZE = 0.005 # Amount of BTC to be traded in a single cycle
+
+# Track global variables
+spreads = []
+
+def get_order_book(symbol):
+    """Fetch the order book for a specific symbol."""
+    try:
+        order_book = client.get_order_book(symbol=symbol)
+        best_bid = float(order_book['bids'][0][0])  # Best bid price
+        best_ask = float(order_book['asks'][0][0])  # Best ask price
+        return best_bid, best_ask
+    except Exception as e:
+        print(f"Error fetching order book for {symbol}: {e}")
+        return None, None
+
+def calculate_arbitrage(symbols):
+    """Calculate potential triangular arbitrage opportunities."""
+    try:
+        _, rate1_ask = get_order_book(symbols[0]) # Get ask price for the first trade
+        rate2_bid, _ = get_order_book(symbols[1]) # Get bid price for second trade
+        _, rate3_ask = get_order_book(symbols[2]) # Get ask price for the third trade
+
+        if None in [rate1_ask, rate2_bid, rate3_ask]:
+            return None
+
+        # Apply trading fee to all legs
+        rate1_ask = rate1_ask * (1 - TRADE_FEE)
+        rate2_bid = rate2_bid * (1 - TRADE_FEE)
+        rate3_ask = rate3_ask * (1 - TRADE_FEE)
+        
+        # Calculate arbitrage profit percentage
+        synthetic_rate = rate3_ask / rate2_bid
+        profit_percent = ((synthetic_rate - rate1_ask) / rate1_ask) * 100
+
+
+        # Calculate price spread
+        spread = synthetic_rate - rate1_ask
+
+        return profit_percent, rate1_ask, synthetic_rate, spread
+    except Exception as e:
+        print(f"Error calculating arbitrage: {e}")
+        return None
+
+def calculate_sma(spread):
+  """Calculate a simple moving average of the spread."""
+  global spreads
+  spreads.append(spread) # append the current spread
+
+  if len(spreads) > SMA_LOOKBACK:
+    spreads.pop(0)  # Remove the oldest spread to maintain the SMA_LOOKBACK size
+  
+  if len(spreads) < SMA_LOOKBACK: # can not calculate sma untill there are enough values
+    return None
+  
+  return np.mean(spreads)
+
+def perform_arbitrage(symbols):
+    """Execute the arbitrage if profitable."""
+    result = calculate_arbitrage(symbols)
+    if result:
+        profit_percent, rate1_ask, synthetic_rate, spread = result
+        print(f"Profit: {profit_percent:.2f}% | Rate1: {rate1_ask} | Synthetic Rate: {synthetic_rate}")
+
+        sma = calculate_sma(spread)
+        if sma is None:
+          print(f"Insufficient data to calculate SMA. Waiting for {SMA_LOOKBACK} data points.")
+          return
+
+        # Calculate the deviation from SMA
+        deviation = abs(spread - sma)
+
+        # Define dynamic threshold, eg. a multiple of the sma
+        THRESHOLD_MULTIPLIER = 0.1 # adjust this value to change the sensitivity of the arbitrage
+        threshold = THRESHOLD_MULTIPLIER * abs(sma)
+
+        print(f"Current Spread:{spread:.6f} | SMA:{sma:.6f} | Deviation:{deviation:.6f} | Threshold:{threshold:.6f}")
+
+        if deviation > threshold:
+            print(f"Statistical Arbitrage opportunity detected: Deviation:{deviation:.6f} exceeds threshold {threshold:.6f}")
+            # Implement trade execution logic here (e.g., create orders)
+            # Example order creation code:
+            # client.create_market_order(symbol='BTC-USDT', side='buy', size=TRANSACTION_SIZE)
+        else:
+            print("No statistically significant arbitrage opportunity found.")
+    else:
+        print("No arbitrage opportunity found.")
+
+
+def main():
+    """Main loop to continuously check for arbitrage opportunities."""
+    # Define the symbols for triangular arbitrage (example: BTC-USDT -> ETH-BTC -> ETH-USDT)
+    symbols = ['BTC-USDT', 'ETH-BTC', 'ETH-USDT']
+
+    while True:
+        print(f"\nChecking arbitrage at {datetime.now()}...")
+        perform_arbitrage(symbols)
+        time.sleep(10)  # Adjust the interval as needed
+
+
+if __name__ == "__main__":
+    main()
